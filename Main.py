@@ -282,6 +282,9 @@ class MasterWindow(tk.Tk):
         self.total_messages = 0
         self.total_chars = 0
 
+        self.min_message_length = 0
+        self.max_message_length = 1000000 
+
         # load user
         self.load_data()
 
@@ -424,6 +427,17 @@ class MasterWindow(tk.Tk):
                             total_videos += len(message['videos'])
                         if 'files' in message:
                             total_files += len(message['files'])
+
+                for message in data.get('messages', []):
+                    message_date = datetime.fromtimestamp(int(message["timestamp_ms"]) / 1000).date()
+                    if self.from_date_entry <= message_date <= self.to_date_entry:
+                        try:
+                            message_content = message['content']
+                            if self.min_message_length <= len(message_content) <= self.max_message_length:
+                                total_messages += 1
+                                total_chars += len(message_content)
+                        except KeyError:
+                            pass
 
                 # fetch chat name and type
                 chat_title = data.get('title', '').encode('iso-8859-1').decode('utf-8')
@@ -792,6 +806,43 @@ class StatisticsPopup(tk.Toplevel):
         listbox.insert('end', f'{self.module.TITLE_PER_WEEK} - {all_msgs / (sec_since_start / (7 * 86400)):.2f}')
         listbox.insert('end', f'{self.module.TITLE_PER_MONTH} - {all_msgs / (sec_since_start / (30 * 86400)):.2f}')
         listbox.insert('end', f'{self.module.TITLE_PER_YEAR} - {all_msgs / (sec_since_start / (365 * 86400)):.2f}')
+
+        # Add entry fields for message length filters
+        tk.Label(self, text='Min Length:').pack(side='top', pady=5)
+        self.min_length_entry = ttk.Entry(self)
+        self.min_length_entry.pack(side='top', pady=5)
+
+        tk.Label(self, text='Max Length:').pack(side='top', pady=5)
+        self.max_length_entry = ttk.Entry(self)
+        self.max_length_entry.pack(side='top', pady=5)
+
+        # Add a button to apply the filters
+        ttk.Button(self, text='Apply Filters', command=self.apply_filters).pack(side='top', pady=5)
+
+    def apply_filters(self):
+        # Fetch values from entry fields, applying defaults if necessary
+        try:
+            min_length = int(self.min_length_entry.get()) if self.min_length_entry.get().strip() else 0
+        except ValueError:
+            min_length = 0  # Use default if input is not a valid integer
+
+        try:
+            max_length = int(self.max_length_entry.get()) if self.max_length_entry.get().strip() else 10000
+        except ValueError:
+            max_length = 10000  # Use default if input is not a valid integer
+
+        # Update values in the MasterWindow
+        self.controller.min_message_length = min_length
+        self.controller.max_message_length = max_length
+
+        # Optionally refresh or re-fetch the data based on these new settings
+        self.refresh_data_based_on_length()
+
+    def refresh_data_based_on_length(self):
+        # Fetch or recalculate statistics based on new length filters
+        data = self.controller.get_filtered_data()
+        # Update the UI components with new data
+        self.update_ui(data)
 
 
 if __name__ == '__main__':
