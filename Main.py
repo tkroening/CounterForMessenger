@@ -186,6 +186,23 @@ class MainPage(tk.Frame):
         scrollbar.config(command=self.treeview.yview)
         self.nav.pack(side='left', fill='y')
         self.main.pack(side='right', fill='both', expand=True)
+        self.treeview.bind('<<TreeviewSelect>>', self.set_current_conversation)
+
+    def set_current_conversation(self, event):
+        selected = self.treeview.selection()
+        if selected:
+            conversation_data = self.treeview.item(selected[0], 'values')
+            # Assuming the conversation identifier is in the 11th column
+            self.controller.current_conversation = conversation_data[10].replace('<@!PREFIX>', '')
+            print(f"Current conversation set to: {self.controller.current_conversation}")
+
+    def show_statistics(self):
+        # This function is called on double click
+        selection = self.treeview.item(self.treeview.selection()[0])
+        if selection:
+            conversation = selection['values'][10].replace(PREFIX, '')
+            data = self.controller.get_filtered_data(conversation)
+            StatisticsPopup(self.controller, data)
 
     # invoked on <button 3>
     def deselect(self):
@@ -282,6 +299,7 @@ class MasterWindow(tk.Tk):
         self.total_messages = 0
         self.total_chars = 0
 
+        self.current_conversation = None
         self.min_message_length = 0
         self.max_message_length = 1000000 
 
@@ -450,6 +468,57 @@ class MasterWindow(tk.Tk):
                     chat_type = self.lang_mdl.TITLE_PRIVATE_CHAT
 
         return chat_title, participants, chat_type, total_messages, total_chars, call_duration, sent_messages, start_date, total_photos, total_gifs, total_videos, total_files
+    
+    def get_filtered_data(self, conversation):
+        """
+        Retrieves and filters data for a specific conversation based on user-defined parameters.
+        """
+        filtered_data = {
+            'chat_title': '',
+            'participants': {},
+            'chat_type': '',
+            'total_messages': 0,
+            'total_chars': 0,
+            'call_duration': 0,
+            'sent_messages': 0,
+            'start_date': '',
+            'total_photos': 0,
+            'total_gifs': 0,
+            'total_videos': 0,
+            'total_files': 0
+        }
+
+        # Use existing extract_data method as basis
+        chat_title, participants, chat_type, total_messages, total_chars, call_duration, sent_messages, start_date, total_photos, total_gifs, total_videos, total_files = self.extract_data(conversation)
+
+        filtered_data.update({
+            'chat_title': chat_title,
+            'participants': participants,
+            'chat_type': chat_type,
+            'call_duration': call_duration,
+            'sent_messages': sent_messages,
+            'start_date': start_date,
+            'total_photos': total_photos,
+            'total_gifs': total_gifs,
+            'total_videos': total_videos,
+            'total_files': total_files
+        })
+
+        for file in glob.glob(f'{self.directory}{conversation}/*.json'):
+            with open(file, 'r') as f:
+                data = json.load(f)
+                for message in data.get('messages', []):
+                    message_date = datetime.fromtimestamp(int(message["timestamp_ms"]) / 1000).date()
+                    if self.from_date_entry <= message_date <= self.to_date_entry:
+                        try:
+                            message_content = message['content']
+                            if self.min_message_length <= len(message_content) <= self.max_message_length:
+                                filtered_data['total_messages'] += 1
+                                filtered_data['total_chars'] += len(message_content)
+                        except KeyError:
+                            continue
+
+        return filtered_data
     
     # Compile data for all conversations
     def get_all_data(self):
@@ -780,25 +849,34 @@ class StatisticsPopup(tk.Toplevel):
             listbox.insert('end', f'{participant} - {messages}')
 
         # show total number of messages and total calltime in conversation
-        ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_MSGS}: {all_msgs}').pack(side='top', pady=5)
-        ttk.Label(self, text=f'{self.module.TITLE_TOTAL_CHARS}: {all_chars}').pack(side='top', pady=5)
-        ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_PHOTOS}: {total_photos}').pack(side='top', pady=5)
-        ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_GIFS}: {total_gifs}').pack(side='top', pady=5)
-        ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_VIDEOS}: {total_videos}').pack(side='top', pady=5)
-        ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_FILES}: {total_files}').pack(side='top', pady=5)
-        ttk.Label(
-            self, text=f'{self.module.TITLE_CALL_DURATION}: {timedelta(seconds=calltime)}'
-        ).pack(side='top', pady=5)
+        self.msg_label = ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_MSGS}: {all_msgs}')
+        self.msg_label.pack(side='top', pady=5)
+
+        self.chars_label = ttk.Label(self, text=f'{self.module.TITLE_TOTAL_CHARS}: {all_chars}')
+        self.chars_label.pack(side='top', pady=5)
+
+        self.photos_label = ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_PHOTOS}: {total_photos}')
+        self.photos_label.pack(side='top', pady=5)
+
+        self.gifs_label = ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_GIFS}: {total_gifs}')
+        self.gifs_label.pack(side='top', pady=5)
+
+        self.videos_label = ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_VIDEOS}: {total_videos}')
+        self.videos_label.pack(side='top', pady=5)
+
+        self.files_label = ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_FILES}: {total_files}')
+        self.files_label.pack(side='top', pady=5)
+
+        self.calls_label = ttk.Label(self, text=f'{self.module.TITLE_CALL_DURATION}: {timedelta(seconds=calltime)}')
+        self.calls_label.pack(side='top', pady=5)
         # show first message date
-        ttk.Label(
-            self, text=f'{self.module.TITLE_START_DATE}: {datetime.fromtimestamp(start_date / 1000)}'
-        ).pack(side='top', pady=5)
+        self.start_date_label = ttk.Label(self, text=f'{self.module.TITLE_START_DATE}: {datetime.fromtimestamp(start_date / 1000)}')
+        self.start_date_label.pack(side='top', pady=5)
 
         # show average messages per time period
         sec_since_start = int(time() - start_date / 1000)
-        ttk.Label(
-            self, text=f'{self.module.TITLE_AVERAGE_MESSAGES}: '
-        ).pack(side='top', pady=5)
+        self.average_msgs_label = ttk.Label( self, text=f'{self.module.TITLE_AVERAGE_MESSAGES}: ')
+        self.average_msgs_label.pack(side='top', pady=5)
 
         listbox = tk.Listbox(self, width=30, height=4)
         listbox.pack(side='top', pady=5)
@@ -839,10 +917,26 @@ class StatisticsPopup(tk.Toplevel):
         self.refresh_data_based_on_length()
 
     def refresh_data_based_on_length(self):
-        # Fetch or recalculate statistics based on new length filters
-        data = self.controller.get_filtered_data()
-        # Update the UI components with new data
-        self.update_ui(data)
+        if self.controller.current_conversation:
+            filtered_data = self.controller.get_filtered_data(self.controller.current_conversation)
+            self.update_ui(filtered_data)
+        else:
+            print("No current conversation set to apply filters.")
+
+    def update_ui(self, data):
+        self.msg_label.config(text=f'{self.module.TITLE_NUMBER_OF_MSGS}: {data["total_messages"]}')
+        self.chars_label.config(text=f'{self.module.TITLE_TOTAL_CHARS}: {data["total_chars"]}')
+        self.photos_label.config(text=f'{self.module.TITLE_NUMBER_OF_PHOTOS}: {data["total_photos"]}')
+        self.gifs_label.config(text=f'{self.module.TITLE_NUMBER_OF_GIFS}: {data["total_gifs"]}')
+        self.videos_label.config(text=f'{self.module.TITLE_NUMBER_OF_VIDEOS}: {data["total_videos"]}')
+        self.files_label.config(text=f'{self.module.TITLE_NUMBER_OF_FILES}: {data["total_files"]}')
+        self.calls_label.config(text=f'{self.module.TITLE_CALL_DURATION}: {timedelta(seconds=data["call_duration"])}')
+        self.start_date_label.config(text=f'{self.module.TITLE_START_DATE}: {datetime.fromtimestamp(data["start_date"] / 1000).strftime("%Y-%m-%d %H:%M:%S")}')
+        sec_since_start = int(time() - data["start_date"] / 1000)
+        avg_msgs_day = data["total_messages"] / (sec_since_start / 86400) if sec_since_start > 86400 else data["total_messages"]
+        self.average_msgs_label.config(text=f'{self.module.TITLE_AVERAGE_MESSAGES}: {avg_msgs_day:.2f} per day')
+
+        print("UI updated with new data!")
 
 
 if __name__ == '__main__':
