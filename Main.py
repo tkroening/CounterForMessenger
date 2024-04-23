@@ -194,10 +194,12 @@ class MainPage(tk.Frame):
             conversation_data = self.treeview.item(selected[0], 'values')
             # Assuming the conversation identifier is in the 11th column
             self.controller.current_conversation = conversation_data[10].replace('<@!PREFIX>', '')
+            self.show_statistics()
             print(f"Current conversation set to: {self.controller.current_conversation}")
 
     def show_statistics(self):
-        # This function is called on double click
+        # This function is called on click
+        # I noticed it was really hard to get statistics to show, so i changed it to be called on click
         selection = self.treeview.item(self.treeview.selection()[0])
         if selection:
             conversation = selection['values'][10].replace(PREFIX, '')
@@ -812,7 +814,7 @@ class StatisticsPopup(tk.Toplevel):
         tk.Toplevel.__init__(self)
         self.controller = controller
         self.module = self.controller.lang_mdl
-        set_resolution(self, 800, 600)
+        set_resolution(self, 800, 1000)
 
         # statistics window customization
         self.title(self.module.TITLE_STATISTICS)
@@ -878,12 +880,12 @@ class StatisticsPopup(tk.Toplevel):
         self.average_msgs_label = ttk.Label( self, text=f'{self.module.TITLE_AVERAGE_MESSAGES}: ')
         self.average_msgs_label.pack(side='top', pady=5)
 
-        listbox = tk.Listbox(self, width=30, height=4)
-        listbox.pack(side='top', pady=5)
-        listbox.insert('end', f'{self.module.TITLE_PER_DAY} - {all_msgs / (sec_since_start / 86400):.2f}')
-        listbox.insert('end', f'{self.module.TITLE_PER_WEEK} - {all_msgs / (sec_since_start / (7 * 86400)):.2f}')
-        listbox.insert('end', f'{self.module.TITLE_PER_MONTH} - {all_msgs / (sec_since_start / (30 * 86400)):.2f}')
-        listbox.insert('end', f'{self.module.TITLE_PER_YEAR} - {all_msgs / (sec_since_start / (365 * 86400)):.2f}')
+        self.avg_listbox = tk.Listbox(self, width=30, height=4)
+        self.avg_listbox.pack(side='top', pady=5)
+        self.avg_listbox.insert('end', f'{self.module.TITLE_PER_DAY} - {all_msgs / (sec_since_start / 86400):.2f}')
+        self.avg_listbox.insert('end', f'{self.module.TITLE_PER_WEEK} - {all_msgs / (sec_since_start / (7 * 86400)):.2f}')
+        self.avg_listbox.insert('end', f'{self.module.TITLE_PER_MONTH} - {all_msgs / (sec_since_start / (30 * 86400)):.2f}')
+        self.avg_listbox.insert('end', f'{self.module.TITLE_PER_YEAR} - {all_msgs / (sec_since_start / (365 * 86400)):.2f}')
 
         # Add entry fields for message length filters
         tk.Label(self, text='Min Length:').pack(side='top', pady=5)
@@ -905,9 +907,9 @@ class StatisticsPopup(tk.Toplevel):
             min_length = 0  # Use default if input is not a valid integer
 
         try:
-            max_length = int(self.max_length_entry.get()) if self.max_length_entry.get().strip() else 10000
+            max_length = int(self.max_length_entry.get()) if self.max_length_entry.get().strip() else 10000000
         except ValueError:
-            max_length = 10000  # Use default if input is not a valid integer
+            max_length = 10000000  # Use default if input is not a valid integer
 
         # Update values in the MasterWindow
         self.controller.min_message_length = min_length
@@ -932,9 +934,18 @@ class StatisticsPopup(tk.Toplevel):
         self.files_label.config(text=f'{self.module.TITLE_NUMBER_OF_FILES}: {data["total_files"]}')
         self.calls_label.config(text=f'{self.module.TITLE_CALL_DURATION}: {timedelta(seconds=data["call_duration"])}')
         self.start_date_label.config(text=f'{self.module.TITLE_START_DATE}: {datetime.fromtimestamp(data["start_date"] / 1000).strftime("%Y-%m-%d %H:%M:%S")}')
+
         sec_since_start = int(time() - data["start_date"] / 1000)
         avg_msgs_day = data["total_messages"] / (sec_since_start / 86400) if sec_since_start > 86400 else data["total_messages"]
-        self.average_msgs_label.config(text=f'{self.module.TITLE_AVERAGE_MESSAGES}: {avg_msgs_day:.2f} per day')
+        avg_msgs_week = data["total_messages"] / (sec_since_start / (7 * 86400)) if sec_since_start > (7 * 86400) else data["total_messages"]
+        avg_msgs_month = data["total_messages"] / (sec_since_start / (30 * 86400)) if sec_since_start > (30 * 86400) else data["total_messages"]
+        avg_msgs_year = data["total_messages"] / (sec_since_start / (365 * 86400)) if sec_since_start > (365 * 86400) else data["total_messages"]
+
+        self.avg_listbox.delete(0, tk.END)
+        self.avg_listbox.insert(tk.END, f'{self.module.TITLE_PER_DAY} - {avg_msgs_day:.2f}')
+        self.avg_listbox.insert(tk.END, f'{self.module.TITLE_PER_WEEK} - {avg_msgs_week:.2f}')
+        self.avg_listbox.insert(tk.END, f'{self.module.TITLE_PER_MONTH} - {avg_msgs_month:.2f}')
+        self.avg_listbox.insert(tk.END, f'{self.module.TITLE_PER_YEAR} - {avg_msgs_year:.2f}')
 
         print("UI updated with new data!")
 
