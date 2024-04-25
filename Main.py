@@ -402,7 +402,7 @@ class MasterWindow(tk.Tk):
         # noinspection PyUnresolvedReferences
         chat_title, chat_type = '', self.lang_mdl.TITLE_GROUP_CHAT
         call_duration, total_messages, total_chars, sent_messages, start_date, total_photos, total_gifs, total_videos, total_files = 0, 0, 0, 0, 0, 0, 0, 0, 0
-
+        first_five_messages = []
         if isinstance(self.from_date_entry, tuple):
             self.from_date_entry = self.from_date_entry[0]
         if isinstance(self.to_date_entry, tuple):
@@ -423,6 +423,11 @@ class MasterWindow(tk.Tk):
                 # update all relevant counters
                 # filter messages that are in the chosen time window
                 for message in data.get('messages', []):
+                    if len(first_five_messages) < 5:  # Limit to first five messages
+                        try:
+                            first_five_messages.append(message['content'])
+                        except KeyError:
+                            continue
                     if self.from_date_entry <= datetime.fromtimestamp(
                             int(message["timestamp_ms"]) / 1000).date() <= self.to_date_entry:
                         total_messages += 1
@@ -469,7 +474,7 @@ class MasterWindow(tk.Tk):
                     # noinspection PyUnresolvedReferences
                     chat_type = self.lang_mdl.TITLE_PRIVATE_CHAT
 
-        return chat_title, participants, chat_type, total_messages, total_chars, call_duration, sent_messages, start_date, total_photos, total_gifs, total_videos, total_files
+        return chat_title, participants, chat_type, total_messages, total_chars, call_duration, sent_messages, start_date, total_photos, total_gifs, total_videos, total_files, first_five_messages
     
     def get_filtered_data(self, conversation):
         """
@@ -491,7 +496,7 @@ class MasterWindow(tk.Tk):
         }
 
         # Use existing extract_data method as basis
-        chat_title, participants, chat_type, total_messages, total_chars, call_duration, sent_messages, start_date, total_photos, total_gifs, total_videos, total_files = self.extract_data(conversation)
+        chat_title, participants, chat_type, total_messages, total_chars, call_duration, sent_messages, start_date, total_photos, total_gifs, total_videos, total_files, first_five_messages = self.extract_data(conversation)
 
         filtered_data.update({
             'chat_title': chat_title,
@@ -547,7 +552,7 @@ class MasterWindow(tk.Tk):
         # List all conversations directories in the given directory
         for conversation_dir in listdir(self.directory):
             chat_data = self.extract_data(conversation_dir)
-            chat_title, participants, chat_type, total_messages, total_chars, call_duration, sent_messages, start_date, total_photos, total_gifs, total_videos, total_files = chat_data
+            chat_title, participants, chat_type, total_messages, total_chars, call_duration, sent_messages, start_date, total_photos, total_gifs, total_videos, total_files, first_five_messages = chat_data
 
             # Apply chat type filter if specified
             if chat_type_filter and chat_type != chat_type_filter:
@@ -771,7 +776,7 @@ class LoadingPopup(tk.Toplevel):
             self.controller.total_chars = 0
             for conversation in listdir(self.directory):
                 try:
-                    title, people, room, all_msgs, all_chars, calltime, sent_msgs, _, total_photos, total_gifs, total_videos, total_files = self.controller.extract_data(
+                    title, people, room, all_msgs, all_chars, calltime, sent_msgs, _, total_photos, total_gifs, total_videos, total_files, first_five_messages = self.controller.extract_data(
                         conversation)
                     if len(people) == 0:
                         # if this occurs, the given path is of correct directory format but contains no useful info
@@ -814,7 +819,7 @@ class StatisticsPopup(tk.Toplevel):
         tk.Toplevel.__init__(self)
         self.controller = controller
         self.module = self.controller.lang_mdl
-        set_resolution(self, 800, 1000)
+        set_resolution(self, 800, 1200)
 
         # statistics window customization
         self.title(self.module.TITLE_STATISTICS)
@@ -822,11 +827,11 @@ class StatisticsPopup(tk.Toplevel):
         self.focus_set()
         self.grab_set()
 
-        title, people, room, all_msgs, all_chars, calltime, sent_msgs, start_date, total_photos, total_gifs, total_videos, total_files = self.controller.extract_data(
+        title, people, room, all_msgs, all_chars, calltime, sent_msgs, start_date, total_photos, total_gifs, total_videos, total_files, first_five_messages = self.controller.extract_data(
             selection)
         # resize the window to fit all data if the conversation is a group chat
         if room == self.module.TITLE_GROUP_CHAT:
-            set_resolution(self, 800, 650)
+            set_resolution(self, 800, 1200)
         # display popup title
         ttk.Label(self, text=f'{self.module.TITLE_MSG_STATS}:').pack(side='top', pady=16)
         # show conversation title and type
@@ -886,6 +891,18 @@ class StatisticsPopup(tk.Toplevel):
         self.avg_listbox.insert('end', f'{self.module.TITLE_PER_WEEK} - {all_msgs / (sec_since_start / (7 * 86400)):.2f}')
         self.avg_listbox.insert('end', f'{self.module.TITLE_PER_MONTH} - {all_msgs / (sec_since_start / (30 * 86400)):.2f}')
         self.avg_listbox.insert('end', f'{self.module.TITLE_PER_YEAR} - {all_msgs / (sec_since_start / (365 * 86400)):.2f}')
+
+        ttk.Label(self, text="First 5 Messages:").pack(side='top', pady=5)
+        self.messages_frame = ttk.Frame(self)
+        self.messages_frame.pack(side='top', fill='both', expand=True)
+        message_list = tk.Listbox(self.messages_frame, height=5)
+        message_list.pack(side='left', fill='both', expand=True)
+        for msg in first_five_messages:
+            display_msg = msg.replace(u"\u2019", "'")
+            message_list.insert(tk.END, display_msg)
+
+        if not first_five_messages:
+            message_list.insert(tk.END, "No messages to display.")
 
         # Add entry fields for message length filters
         tk.Label(self, text='Min Length:').pack(side='top', pady=5)
