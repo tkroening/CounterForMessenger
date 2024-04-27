@@ -303,10 +303,10 @@ class MainPage(tk.Frame):
                     remove = True
 
             for column_name in ['msg', 'call', 'photos', 'gifs', 'videos', 'files']:
-                # Check if user wants to filter by messages
+                # Check if user wants to filter by other columns
                 if self.filter_columns[column_name] != -1:
                     min, max = self.filter_columns[column_name]
-                    if min <= child[column_name] <= max:
+                    if min > child[column_name]  or child[column_name] > max:
                         remove = True
             
             if remove:
