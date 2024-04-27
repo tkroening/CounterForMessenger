@@ -11,7 +11,8 @@ from tkcalendar import DateEntry
 
 # safeguard for the treeview automated string conversion problem
 PREFIX = '<@!PREFIX>'
-
+MIN_MESSAGE_LENGTH = 0
+MAX_MESSAGE_LENGTH = 1000000
 
 # change to desired resolution
 def set_resolution(window, width, height):
@@ -295,6 +296,9 @@ class MasterWindow(tk.Tk):
         self.total_messages = 0
         self.total_chars = 0
 
+        self.min_message_length = MIN_MESSAGE_LENGTH
+        self.max_message_length = MAX_MESSAGE_LENGTH 
+
         # load user
         self.load_data()
 
@@ -464,6 +468,59 @@ class MasterWindow(tk.Tk):
     # method to retrieve message data for statistics popup
     def get_statistics_data(self, conversation):
         return self.extract_data(conversation)
+    
+    def get_filtered_data(self, conversation):
+        """
+        Retrieves and filters data for a specific conversation based on user-defined parameters.
+        """
+        filtered_data = {
+            'chat_title': '',
+            'participants': {},
+            'chat_type': '',
+            'total_messages': 0,
+            'total_chars': 0,
+            'call_duration': 0,
+            'sent_messages': 0,
+            'start_date': '',
+            'total_photos': 0,
+            'total_gifs': 0,
+            'total_videos': 0,
+            'total_files': 0,
+            'first_five_messages': []
+        }
+
+        # Use existing extract_data method as basis
+        chat_title, participants, chat_type, total_messages, total_chars, call_duration, sent_messages, start_date, total_photos, total_gifs, total_videos, total_files, first_five_messages = self.extract_data(conversation)
+
+        filtered_data.update({
+            'chat_title': chat_title,
+            'participants': participants,
+            'chat_type': chat_type,
+            'call_duration': call_duration,
+            'sent_messages': sent_messages,
+            'start_date': start_date,
+            'total_photos': total_photos,
+            'total_gifs': total_gifs,
+            'total_videos': total_videos,
+            'total_files': total_files,
+            'first_five_messages': first_five_messages
+        })
+
+        for file in glob.glob(f'{self.directory}{conversation}/*.json'):
+            with open(file, 'r') as f:
+                data = json.load(f)
+                for message in data.get('messages', []):
+                    message_date = datetime.fromtimestamp(int(message["timestamp_ms"]) / 1000).date()
+                    if self.from_date_entry <= message_date <= self.to_date_entry:
+                        try:
+                            message_content = message['content']
+                            if self.min_message_length <= len(message_content) <= self.max_message_length:
+                                filtered_data['total_messages'] += 1
+                                filtered_data['total_chars'] += len(message_content)
+                        except KeyError:
+                            continue
+
+        return filtered_data
     
     # methods to compile data based on chat type in profile popup
     # Compile data for all conversations
@@ -780,7 +837,7 @@ class StatisticsPopup(tk.Toplevel):
         ).pack(side='top', pady=5)
         if room == self.module.TITLE_GROUP_CHAT:
             # larger amount of participants, load bigger box and include a scrollbar
-            height = 15
+            height = 7
             ttk.Scrollbar(self).pack(side='right', fill='both')
         else:
             # fixed 2 people per private chat, load small box
@@ -791,33 +848,71 @@ class StatisticsPopup(tk.Toplevel):
         for participant, messages in people.items():
             listbox.insert('end', f'{participant} - {messages}')
 
+        
+        separator = ttk.Separator(self, orient='horizontal')
+        separator.pack(fill='x', padx=10, pady=10)  # Fill x to extend across the window
+
         # show total number of messages and total calltime in conversation
-        ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_MSGS}: {all_msgs}').pack(side='top', pady=5)
-        ttk.Label(self, text=f'{self.module.TITLE_TOTAL_CHARS}: {all_chars}').pack(side='top', pady=5)
-        ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_PHOTOS}: {total_photos}').pack(side='top', pady=5)
-        ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_GIFS}: {total_gifs}').pack(side='top', pady=5)
-        ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_VIDEOS}: {total_videos}').pack(side='top', pady=5)
-        ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_FILES}: {total_files}').pack(side='top', pady=5)
-        ttk.Label(
-            self, text=f'{self.module.TITLE_CALL_DURATION}: {timedelta(seconds=calltime)}'
-        ).pack(side='top', pady=5)
+        self.msg_label = ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_MSGS}: {all_msgs}')
+        self.msg_label.pack(side='top', pady=5)
+
+        self.chars_label = ttk.Label(self, text=f'{self.module.TITLE_TOTAL_CHARS}: {all_chars}')
+        self.chars_label.pack(side='top', pady=5)
+
+        self.photos_label = ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_PHOTOS}: {total_photos}')
+        self.photos_label.pack(side='top', pady=5)
+
+        self.gifs_label = ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_GIFS}: {total_gifs}')
+        self.gifs_label.pack(side='top', pady=5)
+
+        self.videos_label = ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_VIDEOS}: {total_videos}')
+        self.videos_label.pack(side='top', pady=5)
+
+        self.files_label = ttk.Label(self, text=f'{self.module.TITLE_NUMBER_OF_FILES}: {total_files}')
+        self.files_label.pack(side='top', pady=5)
+
+        self.calls_label = ttk.Label(self, text=f'{self.module.TITLE_CALL_DURATION}: {timedelta(seconds=calltime)}')
+        self.calls_label.pack(side='top', pady=5)
         # show first message date
-        ttk.Label(
-            self, text=f'{self.module.TITLE_START_DATE}: {datetime.fromtimestamp(start_date / 1000)}'
-        ).pack(side='top', pady=5)
+        self.start_date_label = ttk.Label(self, text=f'{self.module.TITLE_START_DATE}: {datetime.fromtimestamp(start_date / 1000)}')
+        self.start_date_label.pack(side='top', pady=5)
 
         # show average messages per time period
         sec_since_start = int(time() - start_date / 1000)
-        ttk.Label(
-            self, text=f'{self.module.TITLE_AVERAGE_MESSAGES}: '
-        ).pack(side='top', pady=5)
+        self.average_msgs_label = ttk.Label( self, text=f'{self.module.TITLE_AVERAGE_MESSAGES}: ')
+        self.average_msgs_label.pack(side='top', pady=5)
 
-        listbox = tk.Listbox(self, width=30, height=4)
-        listbox.pack(side='top', pady=5)
-        listbox.insert('end', f'{self.module.TITLE_PER_DAY} - {all_msgs / (sec_since_start / 86400):.2f}')
-        listbox.insert('end', f'{self.module.TITLE_PER_WEEK} - {all_msgs / (sec_since_start / (7 * 86400)):.2f}')
-        listbox.insert('end', f'{self.module.TITLE_PER_MONTH} - {all_msgs / (sec_since_start / (30 * 86400)):.2f}')
-        listbox.insert('end', f'{self.module.TITLE_PER_YEAR} - {all_msgs / (sec_since_start / (365 * 86400)):.2f}')
+        self.avg_listbox = tk.Listbox(self, width=30, height=4)
+        self.avg_listbox.pack(side='top', pady=5)
+        self.avg_listbox.insert('end', f'{self.module.TITLE_PER_DAY} - {all_msgs / (sec_since_start / 86400):.2f}')
+        self.avg_listbox.insert('end', f'{self.module.TITLE_PER_WEEK} - {all_msgs / (sec_since_start / (7 * 86400)):.2f}')
+        self.avg_listbox.insert('end', f'{self.module.TITLE_PER_MONTH} - {all_msgs / (sec_since_start / (30 * 86400)):.2f}')
+        self.avg_listbox.insert('end', f'{self.module.TITLE_PER_YEAR} - {all_msgs / (sec_since_start / (365 * 86400)):.2f}')
+
+        # Message length filters frame
+        length_frame = ttk.Frame(self)
+        length_frame.pack(side='top', fill='x', pady=10)  # Pack the frame to fill horizontally with padding
+
+        # Min length entry setup
+        min_length_container = ttk.Frame(length_frame)
+        ttk.Label(min_length_container, text='Min Length:').pack(side='left')
+        self.min_length_entry = ttk.Entry(min_length_container, width=10)
+        self.min_length_entry.pack(side='left')
+        min_length_container.pack(side='left', expand=True)  # Pack container and center it within the frame
+
+        # Max length entry setup
+        max_length_container = ttk.Frame(length_frame)
+        ttk.Label(max_length_container, text='Max Length:').pack(side='left')
+        self.max_length_entry = ttk.Entry(max_length_container, width=10)
+        self.max_length_entry.pack(side='left')
+        max_length_container.pack(side='left', expand=True)  # Pack container and center it within the frame
+
+        # Button to apply filters
+        apply_button_container = ttk.Frame(length_frame)
+        ttk.Button(apply_button_container, text='Apply Filters', command=self.apply_filters).pack()
+        apply_button_container.pack(side='left', expand=True)  # Center the button in the frame
+        separator = ttk.Separator(self, orient='horizontal')
+        separator.pack(fill='x', padx=10, pady=10)  # Fill x to extend across the window
 
         # box to contain first five messages:
         ttk.Label(
@@ -830,15 +925,68 @@ class StatisticsPopup(tk.Toplevel):
         messages_scrollbar = ttk.Scrollbar(messages_frame)
         messages_scrollbar.pack(side='right', fill='y')
 
-        messages_listbox = tk.Listbox(messages_frame, width=50, height=1, yscrollcommand=messages_scrollbar.set)
-        messages_listbox.pack(side='left', fill='both', expand=True)
-        messages_scrollbar.config(command=messages_listbox.yview)
+        self.messages_listbox = tk.Listbox(messages_frame, width=50, height=1, yscrollcommand=messages_scrollbar.set)
+        self.messages_listbox.pack(side='left', fill='both', expand=True)
+        messages_scrollbar.config(command=self.messages_listbox.yview)
+        
 
         for sender_name, content in first_five_messages:
-            messages_listbox.insert('end', f"{sender_name}: {content}")
+            self.messages_listbox.insert('end', f"{sender_name}: {content}")
+
 
         # add close button to close statistics popup
         ttk.Button(self, text="Close", command=self.destroy).pack(side='bottom', pady=10)
+
+    def apply_filters(self):
+        # Fetch values from entry fields, applying defaults if necessary
+        try:
+            min_length = int(self.min_length_entry.get()) if self.min_length_entry.get().strip() else 0
+        except ValueError:
+            min_length = 0  # Use default if input is not a valid integer
+
+        try:
+            max_length = int(self.max_length_entry.get()) if self.max_length_entry.get().strip() else 10000000
+        except ValueError:
+            max_length = 10000000  # Use default if input is not a valid integer
+
+        # Update values in the MasterWindow
+        self.controller.min_message_length = min_length
+        self.controller.max_message_length = max_length
+
+        # Optionally refresh or re-fetch the data based on these new settings
+        self.refresh_data_based_on_length()
+
+    def refresh_data_based_on_length(self):
+        if self.controller.current_conversation:
+            filtered_data = self.controller.get_filtered_data(self.controller.current_conversation)
+            self.update_ui(filtered_data)
+        else:
+            print("No current conversation set to apply filters.")
+
+    def update_ui(self, data):
+        self.msg_label.config(text=f'{self.module.TITLE_NUMBER_OF_MSGS}: {data["total_messages"]}')
+        self.chars_label.config(text=f'{self.module.TITLE_TOTAL_CHARS}: {data["total_chars"]}')
+        self.photos_label.config(text=f'{self.module.TITLE_NUMBER_OF_PHOTOS}: {data["total_photos"]}')
+        self.gifs_label.config(text=f'{self.module.TITLE_NUMBER_OF_GIFS}: {data["total_gifs"]}')
+        self.videos_label.config(text=f'{self.module.TITLE_NUMBER_OF_VIDEOS}: {data["total_videos"]}')
+        self.files_label.config(text=f'{self.module.TITLE_NUMBER_OF_FILES}: {data["total_files"]}')
+        self.calls_label.config(text=f'{self.module.TITLE_CALL_DURATION}: {timedelta(seconds=data["call_duration"])}')
+        self.start_date_label.config(text=f'{self.module.TITLE_START_DATE}: {datetime.fromtimestamp(data["start_date"] / 1000).strftime("%Y-%m-%d %H:%M:%S")}')
+
+        sec_since_start = int(time() - data["start_date"] / 1000)
+        avg_msgs_day = data["total_messages"] / (sec_since_start / 86400) if sec_since_start > 86400 else data["total_messages"]
+        avg_msgs_week = data["total_messages"] / (sec_since_start / (7 * 86400)) if sec_since_start > (7 * 86400) else data["total_messages"]
+        avg_msgs_month = data["total_messages"] / (sec_since_start / (30 * 86400)) if sec_since_start > (30 * 86400) else data["total_messages"]
+        avg_msgs_year = data["total_messages"] / (sec_since_start / (365 * 86400)) if sec_since_start > (365 * 86400) else data["total_messages"]
+
+        self.avg_listbox.delete(0, tk.END)
+        self.avg_listbox.insert(tk.END, f'{self.module.TITLE_PER_DAY} - {avg_msgs_day:.2f}')
+        self.avg_listbox.insert(tk.END, f'{self.module.TITLE_PER_WEEK} - {avg_msgs_week:.2f}')
+        self.avg_listbox.insert(tk.END, f'{self.module.TITLE_PER_MONTH} - {avg_msgs_month:.2f}')
+        self.avg_listbox.insert(tk.END, f'{self.module.TITLE_PER_YEAR} - {avg_msgs_year:.2f}')
+
+
+        print("UI updated with new data!")
 
         
 
