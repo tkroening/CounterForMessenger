@@ -8,9 +8,19 @@ from tkinter import ttk, filedialog
 from os.path import exists
 from os import listdir
 from tkcalendar import DateEntry
+from PIL import Image, ImageTk
 
 # safeguard for the treeview automated string conversion problem
 PREFIX = '<@!PREFIX>'
+
+def setIcon(object):
+    """
+    This function sets the icon of a tkinter window (passed in as `object`) to 
+    the CFM icon.
+    """
+    im = Image.open('assets/CFM.ico')
+    photo = ImageTk.PhotoImage(im)
+    object.wm_iconphoto(True, photo)
 
 
 # change to desired resolution
@@ -138,6 +148,32 @@ class MainPage(tk.Frame):
         self.treeview.bind('<Button-3>', lambda event: self.deselect())
         self.treeview.bind('<Double-1>', lambda event: self.show_statistics())
 
+        # *Ordered* list of columns (so we can display them in a fixed order)
+        self.columns = [
+            'name',
+            'pep',
+            'type',
+            'msg',
+            'call',
+            'photos',
+            'gifs',
+            'videos',
+            'files'
+        ]
+        self.column_titles = columns
+
+        # filter columns
+        self.filter_columns = {
+            'name': '',
+            'pep': set(),
+            'msg': -1,
+            'call': -1,
+            'photos': -1,
+            'gifs': -1,
+            'videos': -1,
+            'files': -1
+        }
+        
         # show frame title
         ttk.Label(
             self.main, text=f'{self.module.TITLE_NUMBER_OF_MSGS}: ', foreground='#ffffff', background='#232323',
@@ -260,6 +296,50 @@ class MainPage(tk.Frame):
         # Reverse the order for the next sort
         self.treeview.heading(column, command=lambda: self.sort_treeview(column, not order, bias))
 
+    def filter_treeview(self):
+        """
+        This function filters out rows based on criterias selected by the user.
+        Example: Show messages with more than 10 photos, but less than 50.
+        """
+
+        # Retrieve all the rows in the treeview
+        children = self.treeview.get_children('')
+
+        to_remove = []
+
+        for child in children:
+            remove = False
+
+            # Check if user wants to filter by name
+            if self.filter_columns['name'] != '':
+                if child['name'] != self.filter_columns['name']:
+                    remove = True
+
+            # Check if user wants to filter by participants
+            if self.filter_columns['pep'] != {}:
+                # only append if  no participants are in the list
+                if self.filter_columns['pep'].isdisjoint(child['pep']):
+                    remove = True
+
+            for column_name in ['msg', 'call', 'photos', 'gifs', 'videos', 'files']:
+                # Check if user wants to filter by other columns
+                if self.filter_columns[column_name] != -1:
+                    min, max = self.filter_columns[column_name]
+                    if min > child[column_name]  or child[column_name] > max:
+                        remove = True
+            
+            if remove:
+                to_remove.append(child)
+
+        filtered = []
+
+        for child in children:
+            if child not in to_remove:
+                filtered.append(child)
+                
+        # Set the selection to the filtered list
+        self.treeview.selection_set(filtered)
+
     # invoked on double left click on any treeview listing
     def show_statistics(self):
         try:
@@ -310,7 +390,7 @@ class MasterWindow(tk.Tk):
 
         # global window customization
         self.title('Counter for Messenger')
-        self.iconbitmap('assets/CFM.ico')
+        setIcon(self)
 
         # frame container setup
         self.container = tk.Frame(self)
@@ -580,7 +660,7 @@ class ProfilePopup(tk.Toplevel):
 
         # profile window customization
         self.title(self.module.TITLE_PROFILE)
-        self.iconbitmap('assets/CFM.ico')
+        setIcon(self)
         self.focus_set()
         self.grab_set()
 
@@ -646,7 +726,7 @@ class SettingsPopup(tk.Toplevel):
 
         # settings window customization
         self.title(self.module.TITLE_SETTINGS)
-        self.iconbitmap('assets/CFM.ico')
+        setIcon(self)
         self.focus_set()
         self.grab_set()
 
@@ -752,7 +832,7 @@ class LoadingPopup(tk.Toplevel):
 
         # loading window customization
         self.title(f'{self.module.TITLE_LOADING}...')
-        self.iconbitmap('assets/CFM.ico')
+        setIcon(self)
         self.resizable(False, False)
         self.focus_set()
         self.grab_set()
@@ -823,7 +903,7 @@ class StatisticsPopup(tk.Toplevel):
 
         # statistics window customization
         self.title(self.module.TITLE_STATISTICS)
-        self.iconbitmap('assets/CFM.ico')
+        setIcon(self)
         self.focus_set()
         self.grab_set()
 
