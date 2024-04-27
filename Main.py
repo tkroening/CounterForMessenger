@@ -286,27 +286,38 @@ class MainPage(tk.Frame):
         # Retrieve all the rows in the treeview
         children = self.treeview.get_children('')
 
-        filtered = []
+        to_remove = []
 
         for child in children:
+            remove = False
+
             # Check if user wants to filter by name
             if self.filter_columns['name'] != '':
                 if child['name'] != self.filter_columns['name']:
-                    filtered.append(child)
+                    remove = True
 
             # Check if user wants to filter by participants
             if self.filter_columns['pep'] != {}:
                 # only append if  no participants are in the list
                 if self.filter_columns['pep'].isdisjoint(child['pep']):
-                    filtered.append(child)
+                    remove = True
 
             for column_name in ['msg', 'call', 'photos', 'gifs', 'videos', 'files']:
                 # Check if user wants to filter by messages
                 if self.filter_columns[column_name] != -1:
                     min, max = self.filter_columns[column_name]
                     if min <= child[column_name] <= max:
-                        filtered.append(child)
+                        remove = True
+            
+            if remove:
+                to_remove.append(child)
 
+        filtered = []
+
+        for child in children:
+            if child not in to_remove:
+                filtered.append(child)
+                
         # Set the selection to the filtered list
         self.treeview.selection_set(filtered)
 
