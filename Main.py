@@ -199,7 +199,6 @@ class MainPage(tk.Frame):
             # Assuming the conversation identifier is in the 11th column
             self.controller.current_conversation = conversation_data[10].replace('<@!PREFIX>', '')
             self.show_statistics()
-            print(f"Current conversation set to: {self.controller.current_conversation}")
 
     # invoked on <button 3>
     def deselect(self):
@@ -986,7 +985,7 @@ class StatisticsPopup(tk.Toplevel):
         self.avg_listbox.insert(tk.END, f'{self.module.TITLE_PER_YEAR} - {avg_msgs_year:.2f}')
 
 
-        print("UI updated with new data!")
+
 
         
 
