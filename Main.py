@@ -8,9 +8,21 @@ from tkinter import ttk, filedialog
 from os.path import exists
 from os import listdir
 from tkcalendar import DateEntry
+from PIL import Image, ImageTk
+import platform
+import ast 
 
 # safeguard for the treeview automated string conversion problem
 PREFIX = '<@!PREFIX>'
+
+def setIcon(object):
+    """
+    This function sets the icon of a tkinter window (passed in as `object`) to 
+    the CFM icon.
+    """
+    im = Image.open('assets/CFM.ico')
+    photo = ImageTk.PhotoImage(im)
+    object.wm_iconphoto(True, photo)
 
 
 # change to desired resolution
@@ -136,11 +148,34 @@ class MainPage(tk.Frame):
         for keyword, text in columns.items():
             self.treeview.heading(keyword, text=text, anchor='center')
         self.treeview.bind('<Button-3>', lambda event: self.deselect())
-        # I commented out the following line because it was raising errors with selecting a conversation:
-        # self.treeview.bind('<Double-1>', lambda event: self.show_statistics())
-        # sets a conversation to current conversation on
-        self.treeview.bind('<<TreeviewSelect>>', self.set_current_conversation)
+        self.treeview.bind('<Double-1>', lambda event: self.show_statistics())
 
+        # *Ordered* list of columns (so we can display them in a fixed order)
+        self.columns = [
+            'name',
+            'pep',
+            'type',
+            'msg',
+            'call',
+            'photos',
+            'gifs',
+            'videos',
+            'files'
+        ]
+        self.column_titles = columns
+
+        # filter columns
+        self.filter_columns = {
+            'name': '',
+            'pep': set(),
+            'msg': -1,
+            'call': -1,
+            'photos': -1,
+            'gifs': -1,
+            'videos': -1,
+            'files': -1
+        }
+        
         # show frame title
         ttk.Label(
             self.main, text=f'{self.module.TITLE_NUMBER_OF_MSGS}: ', foreground='#ffffff', background='#232323',
@@ -164,6 +199,19 @@ class MainPage(tk.Frame):
         ttk.Button(
             self.nav, image=self.controller.ICON_SEARCH, text=self.module.TITLE_SEARCH, compound='left',
             command=self.search
+        ).pack(side='top', pady=10)
+
+        # show filter button
+        ttk.Button(
+            self.nav, text=self.module.TITLE_FILTER, padding=5, command=lambda: FilterPopup(self.controller, self.columns, self.column_titles, self.filter_columns, lambda : self.filter_treeview())
+        ).pack(side='top', pady=10)
+
+        # clear selection button 
+        ttk.Button(
+            self.nav,
+            text="Clear Filters",
+            padding=5,
+            command=self.deselect
         ).pack(side='top', pady=10)
 
         # show exit button
@@ -252,6 +300,43 @@ class MainPage(tk.Frame):
             self.treeview.move(k, '', index)
         # Reverse the order for the next sort
         self.treeview.heading(column, command=lambda: self.sort_treeview(column, not order, bias))
+
+    def filter_treeview(self):
+        """
+        This function filters out rows based on criterias selected by the user.
+        Example: Show messages with more than 10 photos, but less than 50.
+        """
+        # Retrieve all the rows in the treeview
+        children = self.treeview.get_children('')
+
+        column_headers = self.treeview['columns']
+
+        filtered = []
+
+        for child in children:
+            row_content = self.treeview.item(child)['values']
+            row_dict = {column_header: value for column_header, value in zip(column_headers, row_content)}
+
+            keepRow = True
+            # Check if user wants to filter by name
+            if self.filter_columns['name'] != '' and row_dict['name'] != self.filter_columns['name']:
+                keepRow = False
+
+            # Check if user wants to filter by participants
+            if self.filter_columns['pep'] != {''} and not self.filter_columns['pep'].issubset(ast.literal_eval(row_dict['pep'])):
+                keepRow = False
+
+            for column_name in ['msg', 'call', 'photos', 'gifs', 'videos', 'files']:
+                # Check if user wants to filter by messages
+                if self.filter_columns[column_name] != (-1, -1):
+                    min, max = self.filter_columns[column_name]
+                    if (min != -1 and row_dict[column_name] < min) or (max != -1 and row_dict[column_name] > max):
+                        keepRow = False
+            if (keepRow): 
+                filtered.append(child)
+        # 
+        # Set the selection to the filtered list
+        self.treeview.selection_set(filtered)
 
     # invoked on double left click on any treeview listing
     def show_statistics(self):
@@ -711,9 +796,11 @@ class StatisticsPopup(tk.Toplevel):
         self.grab_set()
 
         title, people, room, all_msgs, all_chars, calltime, sent_msgs, start_date, total_photos, total_gifs, total_videos, total_files, first_five_messages = self.controller.extract_data(
+        title, people, room, all_msgs, all_chars, calltime, sent_msgs, start_date, total_photos, total_gifs, total_videos, total_files, first_five_messages = self.controller.extract_data(
             selection)
         # resize the window to fit all data if the conversation is a group chat
         if room == self.module.TITLE_GROUP_CHAT:
+            set_resolution(self, 800, 1200) # enlarge to contain first five messages
             set_resolution(self, 800, 1200) # enlarge to contain first five messages
         # display popup title
         ttk.Label(self, text=f'{self.module.TITLE_MSG_STATS}:').pack(side='top', pady=16)
@@ -789,6 +876,171 @@ class StatisticsPopup(tk.Toplevel):
 
         
 
+        # box to contain first five messages:
+        ttk.Label(
+            self, text="First 5 Messages:"
+        ).pack(side='top', pady=5)
 
+        messages_frame = ttk.Frame(self)  # Frame to hold Listbox and Scrollbar for messages
+        messages_frame.pack(side='top', fill='both', expand=True)
+
+        messages_scrollbar = ttk.Scrollbar(messages_frame)
+        messages_scrollbar.pack(side='right', fill='y')
+
+        messages_listbox = tk.Listbox(messages_frame, width=50, height=1, yscrollcommand=messages_scrollbar.set)
+        messages_listbox.pack(side='left', fill='both', expand=True)
+        messages_scrollbar.config(command=messages_listbox.yview)
+
+        for sender_name, content in first_five_messages:
+            messages_listbox.insert('end', f"{sender_name}: {content}")
+
+        # add close button to close statistics popup
+        ttk.Button(self, text="Close", command=self.destroy).pack(side='bottom', pady=10)
+
+class FilterPopup(tk.Toplevel):
+    """
+    This class implements the filter popup
+    """
+    def __init__(self, controller, columns, column_titles, filter_columns, apply_callback):
+        tk.Toplevel.__init__(self)
+        self.controller = controller
+        self.module = self.controller.lang_mdl
+        set_resolution(self, 800, 600)
+
+        self.columns = columns
+        print(self.columns)
+        self.column_titles = column_titles        
+
+        self.title(self.module.TITLE_FILTER)
+        self.focus_set()
+        self.grab_set()
+
+        self.filter_entries = {}  # Dictionary to store filter entry widgets
+        self.filter_columns = filter_columns
+
+        self.apply_callback = apply_callback
+
+        # Create filter GUI elements
+        ttk.Label(self, text="Filter by:", foreground='#000000', background='#ffffff', font=('Arial', 15)).pack(side='top', pady=10)
+
+
+        self.canvas = tk.Canvas(self, borderwidth=0)
+        # place a frame on the canvas, this frame will hold the child widgets           
+        self.viewPort = tk.Frame(self.canvas)
+        # place a scrollbar on self                     
+        self.vsb = tk.Scrollbar(self, orient="vertical", command=self.canvas.yview) 
+        # attach scrollbar action to scroll of canvas
+        self.canvas.configure(yscrollcommand=self.vsb.set)                          
+        
+        # pack scrollbar to right of self
+        self.vsb.pack(side="right", fill="y")
+        # pack canvas to left of self and expand to fil                                       
+        self.canvas.pack(side="left", fill="both", expand=True)
+        # add view port frame to canvas                     
+        self.canvas_window = self.canvas.create_window((4,4), window=self.viewPort, anchor="nw",            
+                                  tags="self.viewPort")
+        
+        # bind an event whenever the size of the viewPort frame changes.
+        self.viewPort.bind("<Configure>", self.onFrameConfigure)
+        # bind an event whenever the size of the canvas frame changes.                       
+        self.canvas.bind("<Configure>", self.onCanvasConfigure)                       
+        # bind wheel events when the cursor enters the control  
+        self.viewPort.bind('<Enter>', self.onEnter)
+        # unbind wheel events when the cursorl leaves the control                                 
+        self.viewPort.bind('<Leave>', self.onLeave)                                 
+
+        # perform an initial stretch on render, otherwise the scroll region 
+        # has a tiny border until the first resize
+        self.onFrameConfigure(None)                                                 
+        for column in columns:
+            label_width = len(self.column_titles[column]) + 2
+            if column in ['name', 'pep', 'type']:
+                label = ttk.Label(self.viewPort, text=self.column_titles[column], foreground='#000000', background='#ffffff', anchor="center", width = label_width)
+                label.pack(side='top', pady=5)  # Fill the label horizontally
+                entry = ttk.Entry(self.viewPort, width=30)
+                entry.pack(side='top', pady=5)  # Fill the entry horizontally
+                self.filter_entries[column] = entry
+            else:  # For numerical fields
+    
+                label = ttk.Label(self.viewPort, text=f"{self.column_titles[column]}:", foreground='#000000', background='#ffffff', anchor="center", width = label_width)
+                label.pack(side='top', pady=5)  # Fill the label horizontally
+                
+                label_frame = ttk.Frame(self.viewPort)
+                label_frame.pack(side='top', pady=5)  # Fill and expand the label frame horizontally
+                container_frame = ttk.Frame(label_frame)
+                container_frame.pack()
+
+                min_label = ttk.Label(container_frame, text="Min:")
+                min_label.grid(row=0, column=0, padx=(0, 5))
+
+                min_entry = ttk.Entry(container_frame, width=5)
+                min_entry.grid(row=0, column=1, padx=(0, 5))
+
+                max_label = ttk.Label(container_frame, text="Max:")
+                max_label.grid(row=0, column=2, padx=(0, 5))
+
+                max_entry = ttk.Entry(container_frame, width=5)
+                max_entry.grid(row=0, column=3, padx=(0, 5))
+
+                container_frame.grid_columnconfigure(0, weight=1)
+                self.filter_entries[column] = (min_entry,max_entry)
+        
+        apply_button = ttk.Button(self.viewPort, text="Apply Filters", command=self.apply_filters)
+        apply_button.pack(fill=tk.X, pady=10)  # Fill the button horizontally
+
+    def onFrameConfigure(self, event):                                              
+        '''Reset the scroll region to encompass the inner frame'''
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))                 
+
+    def onCanvasConfigure(self, event):
+        '''Reset the canvas window to encompass inner frame when required'''
+        canvas_width = event.width
+        self.canvas.itemconfig(self.canvas_window, width = canvas_width)            
+
+    def onMouseWheel(self, event):                                                  
+        # cross platform scroll wheel event
+        if platform.system() == 'Windows':
+            self.canvas.yview_scroll(int(-1* (event.delta/120)), "units")
+        elif platform.system() == 'Darwin':
+            self.canvas.yview_scroll(int(-1 * event.delta), "units")
+        else:
+            if event.num == 4:
+                self.canvas.yview_scroll( -1, "units" )
+            elif event.num == 5:
+                self.canvas.yview_scroll( 1, "units" )
+    
+    def onEnter(self, event):                                                       
+        # bind wheel events when the cursor enters the control
+        if platform.system() == 'Linux':
+            self.canvas.bind_all("<Button-4>", self.onMouseWheel)
+            self.canvas.bind_all("<Button-5>", self.onMouseWheel)
+        else:
+            self.canvas.bind_all("<MouseWheel>", self.onMouseWheel)
+
+    def onLeave(self, event):                                                       
+        # unbind wheel events when the cursorl leaves the control
+        if platform.system() == 'Linux':
+            self.canvas.unbind_all("<Button-4>")
+            self.canvas.unbind_all("<Button-5>")
+        else:
+            self.canvas.unbind_all("<MouseWheel>")
+
+
+    def apply_filters(self):
+        for column, entry in self.filter_entries.items():
+            if column in ['name', 'type']:
+                self.filter_columns[column] = entry.get()
+            elif column == 'pep': 
+                participant_names = [participant.strip() for participant in entry.get().split(',')]
+                self.filter_columns[column] = set(participant_names)
+            else:  # For numerical fields
+                min_val = entry[0].get()
+                max_val = entry[1].get()
+                self.filter_columns[column] = (int(min_val) if min_val else -1, int(max_val) if max_val else -1)
+        self.apply_callback()
+        self.destroy()
+        
+
+ 
 if __name__ == '__main__':
     MasterWindow().mainloop()
